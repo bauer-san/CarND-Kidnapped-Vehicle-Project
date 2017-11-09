@@ -25,14 +25,48 @@ void ParticleFilter::init(double x, double y, double theta, double std[]) {
 	// Add random Gaussian noise to each particle.
 	// NOTE: Consult particle_filter.h for more information about this method (and others in this file).
 
+	num_particles=10; //1000;
+	particles.resize(num_particles);
+
+	default_random_engine gen;
+
+	// from L14.5
+	normal_distribution<double> dist_x(x, std[0]);
+	normal_distribution<double> dist_y(y, std[1]);
+	normal_distribution<double> dist_theta(theta, std[2]);
+
+	for (int i=0;i<num_particles;i++){
+		particles[i].x=dist_x(gen);
+		particles[i].y=dist_y(gen);
+		particles[i].theta=dist_theta(gen);
+		particles[i].weight=1.;
+	}
+
+	is_initialized=true;
+
 }
 
 void ParticleFilter::prediction(double delta_t, double std_pos[], double velocity, double yaw_rate) {
-	// TODO: Add measurements to each particle and add random Gaussian noise.
+	// TODO: Add measurements to each particle USING A MOTION MODEL and add random Gaussian noise.
 	// NOTE: When adding noise you may find std::normal_distribution and std::default_random_engine useful.
 	//  http://en.cppreference.com/w/cpp/numeric/random/normal_distribution
 	//  http://www.cplusplus.com/reference/random/default_random_engine/
+	default_random_engine gen;
 
+	normal_distribution<double> dist_x(0., std_pos[0]);
+	normal_distribution<double> dist_y(0., std_pos[1]);
+	normal_distribution<double> dist_theta(0., std_pos[2]);
+
+	for (int i=0;i<num_particles;i++){
+		if (abs(yaw_rate)>0.001) {
+			particles[i].x+=velocity/yaw_rate*(sin(particles[i].theta+yaw_rate*delta_t)-sin(particles[i].theta)) + dist_x(gen);
+			particles[i].y+=velocity/yaw_rate*(cos(particles[i].theta)-cos(particles[i].theta+yaw_rate*delta_t)) + dist_y(gen);
+			particles[i].theta+=+yaw_rate*delta_t + dist_theta(gen);
+		} else { // => CONSTANT yaw_angle
+			particles[i].x+=velocity*delta_t*cos(particles[i].theta) + dist_x(gen);
+			particles[i].y+=velocity*delta_t*sin(particles[i].theta) + dist_y(gen);
+		} /*if*/
+	}/*for*/
 }
 
 void ParticleFilter::dataAssociation(std::vector<LandmarkObs> predicted, std::vector<LandmarkObs>& observations) {
@@ -55,6 +89,38 @@ void ParticleFilter::updateWeights(double sensor_range, double std_landmark[],
 	//   and the following is a good resource for the actual equation to implement (look at equation 
 	//   3.33
 	//   http://planning.cs.uiuc.edu/node99.html
+
+	struct TransformedObs {
+		double x;
+		double y;
+	} TObs;
+	struct NN {
+		int ID;
+		double dist_m;
+	} NearestNeighbor;
+
+	double PtoL_dist;
+
+	for (int i=0;i<num_particles;i++){
+		for (int j=0;j<observations.size();j++){
+			// Transform observations from VEHICLE to MAP coordinates
+			TObs.x=observations[j].x*cos(particles[i].theta) - observations[j].y*sin(particles[i].theta) + particles[i].x;
+			TObs.y=observations[j].x*sin(particles[i].theta) + observations[j].y*cos(particles[i].theta) + particles[i].y,
+
+			NearestNeighbor.ID=0;
+			NearestNeighbor.dist_m=9999.; // Initialize to a huge value
+			for (int k=0;k<map_landmarks.landmark_list.size();k++){
+				//Find distance from particle to Landmark
+				PtoL_dist = dist(TObs.x, TObs.y, map_landmarks.landmark_list[k].x_f, map_landmarks.landmark_list[k].y_f);
+
+				//If a new NN was found update distance and ID
+				if (PtoL_dist<NearestNeighbor.dist_m){
+					NearestNeighbor.dist_m=PtoL_dist;
+					NearestNeighbor.ID=map_landmarks.landmark_list[k].id_i;
+				}/*if*/
+			}/*for k*/
+		}/*for j*/
+	}/*for i*/
 }
 
 void ParticleFilter::resample() {
