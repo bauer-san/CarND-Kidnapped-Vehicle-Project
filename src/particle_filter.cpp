@@ -25,7 +25,7 @@ void ParticleFilter::init(double x, double y, double theta, double std[]) {
 	// Add random Gaussian noise to each particle.
 	// NOTE: Consult particle_filter.h for more information about this method (and others in this file).
 
-	num_particles=2;
+	num_particles=10;
 	particles.resize(num_particles);
 
 	default_random_engine gen;
@@ -88,6 +88,9 @@ void ParticleFilter::dataAssociation(std::vector<LandmarkObs> predicted, std::ve
 	// NOTE: this method will NOT be called by the grading code. But you will probably find it useful to 
 	//   implement this method and use it as a helper during the updateWeights phase.
 
+	// predicted => what we expected to see
+	// observations => what we actually see
+
 }
 
 void ParticleFilter::updateWeights(double sensor_range, double std_landmark[], 
@@ -131,7 +134,7 @@ void ParticleFilter::updateWeights(double sensor_range, double std_landmark[],
 	bool hit;
 
 	for (int i=0;i<num_particles;i++){ // for each PARTICLE
-		//particles[i].weight=1.;
+		particles[i].weight=1./num_particles;
 		hit = false;
 		for (int j=0;j<observations.size();j++){ // for each OBSERVATION
 			// Transform the observation from VEHICLE to MAP coordinates
@@ -153,7 +156,6 @@ void ParticleFilter::updateWeights(double sensor_range, double std_landmark[],
 				if (PtoL_dist<NearestNeighbor.dist_m){
 					NearestNeighbor.dist_m=PtoL_dist;
 					NearestNeighbor.ID=lm_id;
-//cout << i << "\t" << NearestNeighbor.ID << endl;
 				}/*if*/
 			}/*for k*/
 
@@ -162,29 +164,30 @@ void ParticleFilter::updateWeights(double sensor_range, double std_landmark[],
 
 			// Update Weight -> Apply Multivariate-Gaussian Probability to calculate P_xy
 			P_xy = scaleP_xy * exp(-(((TObs.x-mu_x)*(TObs.x-mu_x))/(2.*std_landmark[0]*std_landmark[0]) + ((TObs.y-mu_y)*(TObs.y-mu_y))/(2.*std_landmark[1]*std_landmark[1])));
-//cout << NearestNeighbor.ID << "\t" << TObs.x << "\t" << mu_x << "\t" << TObs.y << "\t" << mu_y << "\tP_xy: " << P_xy << endl;
-//cout << P_xy << endl;
-			if (P_xy !=0) {
-				if (!hit) {
-					particles[i].weight = P_xy;	// Combine probabilities
-					hit=true;
-				} else {
+
+//			if (P_xy !=0) {
+//				if (!hit) {
+//					particles[i].weight = P_xy;	// Combine probabilities
+//					hit=true;
+//				} else {
 					particles[i].weight *= P_xy;	// Combine probabilities
-				}/*if !hit*/
-			}/*if P_xy !=0*/
-//cout << mu_x << "\t" << mu_y << "\t" << particles[i].weight << endl;
-cout << "Particle: " << i << "\tWeight: " << particles[i].weight <<  "\tObservation: " << j << "\tLandmark: " << NearestNeighbor.ID << endl;
+//				}/*if !hit*/
+//			}/*if P_xy !=0*/
+
+// cout << "Particle: " << i << "\tWeight: " << particles[i].weight << "\tObservation: " << j <<  "\tTObs_x: " << TObs.x <<  "\tTObs_y: " << TObs.y << "\tLandmark: " << NearestNeighbor.ID << "\tmuX: " << mu_x << "\tmuY: " << mu_y << "\t" << endl;
 			// Update the association, sense_x, and sense_y for this observation
 			associations.push_back(NearestNeighbor.ID);
-			sense_x.push_back(mu_x);
-			sense_y.push_back(mu_y);
-
+			sense_x.push_back(TObs.x);
+			sense_y.push_back(TObs.y);
 		}/*for j*/
 
-	particles[i] = SetAssociations(particles[i], associations, sense_x, sense_y);
-	weights[i]=particles[i].weight;
-
+		particles[i] = SetAssociations(particles[i], associations, sense_x, sense_y);
+//	sum_weight+=particles[i].weight
 	}/*for i*/
+//	weights[i]=particles[i].weight;
+	for(int i=0;i<num_particles;i++){
+		weights[i]=1/num_particles;
+	}
 }
 
 void ParticleFilter::resample() {
