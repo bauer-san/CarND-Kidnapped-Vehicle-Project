@@ -34,10 +34,9 @@ void ParticleFilter::init(double x, double y, double theta, double std[]) {
 	normal_distribution<double> NormDist_y(y, std[1]);
 	normal_distribution<double> NormDist_theta(theta, std[2]);
 
-	for (int i=0;i<num_particles;i++){
-		Particle this_particle;
+	for(auto& this_particle : particles) {
 
-		this_particle.id=i;
+//		this_particle.id=i;
 		this_particle.x=NormDist_x(gen);
 		this_particle.y=NormDist_y(gen);
 		this_particle.theta=NormDist_theta(gen);
@@ -64,10 +63,7 @@ void ParticleFilter::prediction(double delta_t, double std_pos[], double velocit
 	normal_distribution<double> NormDist_y(0., std_pos[1]);
 	normal_distribution<double> NormDist_theta(0., std_pos[2]);
 
-	Particle this_particle;
-
-	for (int i=0;i<num_particles;i++){
-		this_particle = particles[i];
+	for(auto& this_particle : particles) {
 		if (yaw_rate==0.) { // => CONSTANT yaw_angle
 			this_particle.x+=velocity*delta_t*cos(this_particle.theta) + NormDist_x(gen);
 			this_particle.y+=velocity*delta_t*sin(this_particle.theta) + NormDist_y(gen);
@@ -76,8 +72,6 @@ void ParticleFilter::prediction(double delta_t, double std_pos[], double velocit
 			this_particle.y+=velocity/yaw_rate*(cos(this_particle.theta)-cos(this_particle.theta+yaw_rate*delta_t)) + NormDist_y(gen);
 			this_particle.theta+=+yaw_rate*delta_t + NormDist_theta(gen);
 		} /*if*/
-
-	particles[i]=this_particle;
 
 	}/*for*/
 }
@@ -102,7 +96,7 @@ void ParticleFilter::dataAssociation(std::vector<LandmarkObs> predicted, std::ve
 
 	for (int j=0;j<observations.size();j++){ // for each OBSERVATION
 
-		min_dist=-1.;  // RESET min_dist
+		min_dist=std::numeric_limits<float>::max();  // RESET min_dist
 
 		for (int k=0;k<predicted.size();k++){ // for each PREDICTED / LANDMARK
 			double this_dist;
@@ -144,16 +138,21 @@ void ParticleFilter::updateWeights(double sensor_range, double std_landmark[],
 
 	double P_xy, scaleP_xy = 1./(2.*M_PI*std_landmark[0]*std_landmark[1]); //1.76839
 
-	for (int i=0;i<num_particles;i++){ // for each PARTICLE
+	weights.clear();
+	
 
-		std::vector<LandmarkObs> landmarks_in_sensor_range;
+//	for (int i=0;i<num_particles;i++){ // for each PARTICLE
+	for(auto& this_particle : particles) {
+		std::vector<LandmarkObs> pred_meas;
 		std::vector<LandmarkObs> TransformedObservations;
 
-		Particle this_particle = particles[i];
+//		Particle this_particle = particles[i];
 
 		double p_x = this_particle.x;
 		double p_y = this_particle.y;
 		double p_theta = this_particle.theta;
+
+		this_particle.weight=1.;
 
 		// **
 		// Get the list of landmarks within sensor_range of this particle: 
@@ -166,7 +165,7 @@ void ParticleFilter::updateWeights(double sensor_range, double std_landmark[],
 	
 			if ( dist(p_x, p_y, lm_x, lm_y) < sensor_range) {
 				LandmarkObs landmark = {lm_id, lm_x, lm_y};
-				landmarks_in_sensor_range.push_back(landmark);
+				pred_meas.push_back(landmark);
 			}
 		}
 
@@ -187,44 +186,42 @@ void ParticleFilter::updateWeights(double sensor_range, double std_landmark[],
 
 //cout << "Particle: " << i << endl;
 		// Having landmarks in range and observation coords in the same reference frame, make the nearest neighbor association
-		dataAssociation(landmarks_in_sensor_range, TransformedObservations);
+		dataAssociation(pred_meas, TransformedObservations);
 
 		// **
 		// update the particle weight
 		// **
-		particles[i].weight = 1.;
-
 		std::vector<int> associations;
 		std::vector<double> sense_x;
 		std::vector<double> sense_y;
 
 		for (int j=0;j<TransformedObservations.size();j++){ // for each TRANSFORMED OBSERVATION
 
-			LandmarkObs tobs = TransformedObservations[j];
+			LandmarkObs NearestNeighbor_Obs = TransformedObservations[j];
 
-			double mu_x=map_landmarks.landmark_list[tobs.id-1].x_f;
-			double mu_y=map_landmarks.landmark_list[tobs.id-1].y_f;
-//cout << tobs.x << "\t" << tobs.y << "\t" << mu_x << "\t" << mu_y << endl;
-			//probability that this observation matches this landmark
-			P_xy = scaleP_xy * exp(-(((tobs.x-mu_x)*(tobs.x-mu_x))/(2.*std_landmark[0]*std_landmark[0]) + ((tobs.y-mu_y)*(tobs.y-mu_y))/(2.*std_landmark[1]*std_landmark[1])));
-			particles[i].weight *= P_xy; // Combine probabilities
-//cout << "P_xy: " << P_xy << endl;
-			associations.push_back(tobs.id);
-			sense_x.push_back(tobs.x);
-			sense_y.push_back(tobs.y);
+			double mu_x=map_landmarks.landmark_list[NearestNeighbor_Obs.id-1].x_f;
+			double mu_y=map_landmarks.landmark_list[NearestNeighbor_Obs.id-1].y_f;
+//cout << "NN ID: " << NearestNeighbor_Obs.id << "\t" << NearestNeighbor_Obs.x << "\t" << NearestNeighbor_Obs.y << "\t" << mu_x << "\t" << mu_y << "\t";
+
+			//probability that this NN observation matches this landmark
+			P_xy = scaleP_xy * exp(-(((NearestNeighbor_Obs.x-mu_x)*(NearestNeighbor_Obs.x-mu_x))/(2.*std_landmark[0]*std_landmark[0]) + ((NearestNeighbor_Obs.y-mu_y)*(NearestNeighbor_Obs.y-mu_y))/(2.*std_landmark[1]*std_landmark[1])));
+//cout << P_xy << endl;
+			this_particle.weight *= P_xy; // Combine probabilities
+
+			// For animation
+			associations.push_back(NearestNeighbor_Obs.id);
+			sense_x.push_back(NearestNeighbor_Obs.x);
+			sense_y.push_back(NearestNeighbor_Obs.y);
 		}
 
 //cout << "particle weight:\t" << particles[i].weight << endl;
 
-		particles[i] = SetAssociations(particles[i], associations, sense_x, sense_y);
+		this_particle = SetAssociations(this_particle, associations, sense_x, sense_y);
 
-		weights[i]=particles[i].weight;
+		weights.push_back(this_particle.weight);
 
-	} /*for i (PARTICLE)*/
+	} /*for (PARTICLE)*/
 
-	for(int i=0;i<num_particles;i++){
-		weights[i]=1/num_particles;
-	}
 }
 
 void ParticleFilter::resample() {
