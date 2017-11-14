@@ -25,7 +25,7 @@ void ParticleFilter::init(double x, double y, double theta, double std[]) {
 	// Add random Gaussian noise to each particle.
 	// NOTE: Consult particle_filter.h for more information about this method (and others in this file).
 
-	num_particles=10;
+	num_particles=20;
 	particles.resize(num_particles);
 
 	default_random_engine gen;
@@ -87,9 +87,37 @@ void ParticleFilter::dataAssociation(std::vector<LandmarkObs> predicted, std::ve
 	//   observed measurement to this particular landmark.
 	// NOTE: this method will NOT be called by the grading code. But you will probably find it useful to 
 	//   implement this method and use it as a helper during the updateWeights phase.
+	//
+	// INPUTS:
+	//		predicted => what we expected to see (i.e., Map Landmarks - in particle reference frame)
+	//		observations => what we actually see
 
-	// predicted => what we expected to see
-	// observations => what we actually see
+
+	// For each Observation
+	//		For each in-range Landmark
+	//			calculate distance
+	//		Assign ID of Landmark closest to this observation to Observation ID
+
+	double min_dist;
+
+	for (int j=0;j<observations.size();j++){ // for each OBSERVATION
+
+		min_dist=-1.;  // RESET min_dist
+
+		for (int k=0;k<predicted.size();k++){ // for each PREDICTED / LANDMARK
+			double this_dist;
+		
+			this_dist=dist(predicted[k].x, predicted[k].y, observations[j].x, observations[j].y);
+
+			// FIND THE NEAREST NEIGHBOR
+			if ((this_dist<min_dist) || (min_dist==-1.)) {  // if first or new minimum distance
+				min_dist=this_dist;
+				observations[j].id=predicted[k].id;			// HELLO NEIGHBOR
+			}
+		} // for k (LANDMARK)
+//cout << "\tObservation: " << j << "\tNearest Neighbor: " << observations[j].id << endl;
+
+	} // for j OBSERVATION
 
 }
 
@@ -107,84 +135,93 @@ void ParticleFilter::updateWeights(double sensor_range, double std_landmark[],
 	//   http://planning.cs.uiuc.edu/node99.html
 
 	//For each particle:
+	//	Get a list of all landmarks in sensor_range
 	//		For Each Observation:
-	//			Transform observations from VEHICLE to MAP coordinates -> Calculate TObs
-	//			Associate the nearest landmark with each TObs 
+	//			Transform observations from VEHICLE to MAP coordinates -> Calculate TransformedObservations
+	//			Associate the nearest landmark with each TransformedObservations 
 	//			Update Weight -> Apply Multivariate-Gaussian Probability to calculate P_xy
 	//			Combine probabilities (multiply)
 
-	LandmarkObs TObs;
-
-	int lm_id;
-	double lm_x, lm_y, mu_x, mu_y;
-
-	double PtoL_dist;
-
-	struct NN {
-		int ID;
-		double dist_m;
-	} NearestNeighbor;
-
-	std::vector<int> associations;
-	std::vector<double> sense_x;
-	std::vector<double> sense_y;
-
-	double P_xy, scaleP_xy = 1./(2.*M_PI*std_landmark[0]*std_landmark[1]);  //1.76839
-
-	bool hit;
+	double P_xy, scaleP_xy = 1./(2.*M_PI*std_landmark[0]*std_landmark[1]); //1.76839
 
 	for (int i=0;i<num_particles;i++){ // for each PARTICLE
-		particles[i].weight=1./num_particles;
-		hit = false;
+
+		std::vector<LandmarkObs> landmarks_in_sensor_range;
+		std::vector<LandmarkObs> TransformedObservations;
+
+		Particle this_particle = particles[i];
+
+		double p_x = this_particle.x;
+		double p_y = this_particle.y;
+		double p_theta = this_particle.theta;
+
+		// **
+		// Get the list of landmarks within sensor_range of this particle: 
+		// Using MAP COORDS
+		// **
+		for (int j=0;j<map_landmarks.landmark_list.size();j++){ // for each LANDMARK
+			int lm_id = map_landmarks.landmark_list[j].id_i;
+			double lm_x = map_landmarks.landmark_list[j].x_f;
+			double lm_y = map_landmarks.landmark_list[j].y_f;
+	
+			if ( dist(p_x, p_y, lm_x, lm_y) < sensor_range) {
+				LandmarkObs landmark = {lm_id, lm_x, lm_y};
+				landmarks_in_sensor_range.push_back(landmark);
+			}
+		}
+
 		for (int j=0;j<observations.size();j++){ // for each OBSERVATION
-			// Transform the observation from VEHICLE to MAP coordinates
-			TObs.x=observations[j].x*cos(particles[i].theta) - observations[j].y*sin(particles[i].theta) + particles[i].x;
-			TObs.y=observations[j].x*sin(particles[i].theta) + observations[j].y*cos(particles[i].theta) + particles[i].y,
 
-			// Associate the nearest landmark with each TObs
-			NearestNeighbor.ID=0;
-			NearestNeighbor.dist_m=99999.; // Initialize to a huge value
-			for (int k=0;k<map_landmarks.landmark_list.size();k++){
-				lm_id = map_landmarks.landmark_list[k].id_i;
-				lm_x = map_landmarks.landmark_list[k].x_f;
-				lm_y = map_landmarks.landmark_list[k].y_f;
+			LandmarkObs this_observation = observations[j];
+			LandmarkObs tobs;
 
-				// Calculate the distance from Observation to Landmark 
-				PtoL_dist=dist(TObs.x, TObs.y, lm_x, lm_y);
+			// Transform the observation from VEHICLE to MAP COORDS
+			tobs.x=this_observation.x*cos(p_theta) - this_observation.y*sin(p_theta) + p_x;
+			tobs.y=this_observation.x*sin(p_theta) + this_observation.y*cos(p_theta) + p_y,
+			tobs.id=this_observation.id;
 
-				// If new NearestNeighbor, update distance and ID
-				if (PtoL_dist<NearestNeighbor.dist_m){
-					NearestNeighbor.dist_m=PtoL_dist;
-					NearestNeighbor.ID=lm_id;
-				}/*if*/
-			}/*for k*/
+			// And add it to the Transformed Observation vector
+			TransformedObservations.push_back(tobs);
 
-			mu_x = map_landmarks.landmark_list[NearestNeighbor.ID-1].x_f;
-			mu_y = map_landmarks.landmark_list[NearestNeighbor.ID-1].y_f;
+		} //for j OBSERVATION
 
-			// Update Weight -> Apply Multivariate-Gaussian Probability to calculate P_xy
-			P_xy = scaleP_xy * exp(-(((TObs.x-mu_x)*(TObs.x-mu_x))/(2.*std_landmark[0]*std_landmark[0]) + ((TObs.y-mu_y)*(TObs.y-mu_y))/(2.*std_landmark[1]*std_landmark[1])));
+//cout << "Particle: " << i << endl;
+		// Having landmarks in range and observation coords in the same reference frame, make the nearest neighbor association
+		dataAssociation(landmarks_in_sensor_range, TransformedObservations);
 
-//			if (P_xy !=0) {
-//				if (!hit) {
-//					particles[i].weight = P_xy;	// Combine probabilities
-//					hit=true;
-//				} else {
-					particles[i].weight *= P_xy;	// Combine probabilities
-//				}/*if !hit*/
-//			}/*if P_xy !=0*/
+		// **
+		// update the particle weight
+		// **
+		particles[i].weight = 1.;
 
-// cout << "Particle: " << i << "\tWeight: " << particles[i].weight << "\tObservation: " << j <<  "\tTObs_x: " << TObs.x <<  "\tTObs_y: " << TObs.y << "\tLandmark: " << NearestNeighbor.ID << "\tmuX: " << mu_x << "\tmuY: " << mu_y << "\t" << endl;
-			// Update the association, sense_x, and sense_y for this observation
-			associations.push_back(NearestNeighbor.ID);
-			sense_x.push_back(TObs.x);
-			sense_y.push_back(TObs.y);
-		}/*for j*/
+		std::vector<int> associations;
+		std::vector<double> sense_x;
+		std::vector<double> sense_y;
+
+		for (int j=0;j<TransformedObservations.size();j++){ // for each TRANSFORMED OBSERVATION
+
+			LandmarkObs tobs = TransformedObservations[j];
+
+			double mu_x=map_landmarks.landmark_list[tobs.id-1].x_f;
+			double mu_y=map_landmarks.landmark_list[tobs.id-1].y_f;
+//cout << tobs.x << "\t" << tobs.y << "\t" << mu_x << "\t" << mu_y << endl;
+			//probability that this observation matches this landmark
+			P_xy = scaleP_xy * exp(-(((tobs.x-mu_x)*(tobs.x-mu_x))/(2.*std_landmark[0]*std_landmark[0]) + ((tobs.y-mu_y)*(tobs.y-mu_y))/(2.*std_landmark[1]*std_landmark[1])));
+			particles[i].weight *= P_xy; // Combine probabilities
+//cout << "P_xy: " << P_xy << endl;
+			associations.push_back(tobs.id);
+			sense_x.push_back(tobs.x);
+			sense_y.push_back(tobs.y);
+		}
+
+//cout << "particle weight:\t" << particles[i].weight << endl;
 
 		particles[i] = SetAssociations(particles[i], associations, sense_x, sense_y);
-//	sum_weight+=particles[i].weight
-	}/*for i*/
-//	weights[i]=particles[i].weight;
+
+		weights[i]=particles[i].weight;
+
+	} /*for i (PARTICLE)*/
+
 	for(int i=0;i<num_particles;i++){
 		weights[i]=1/num_particles;
 	}
