@@ -36,7 +36,6 @@ void ParticleFilter::init(double x, double y, double theta, double std[]) {
 
 	for(auto& this_particle : particles) {
 
-//		this_particle.id=i;
 		this_particle.x=NormDist_x(gen);
 		this_particle.y=NormDist_y(gen);
 		this_particle.theta=NormDist_theta(gen);
@@ -140,13 +139,9 @@ void ParticleFilter::updateWeights(double sensor_range, double std_landmark[],
 
 	weights.clear();
 	
-
-//	for (int i=0;i<num_particles;i++){ // for each PARTICLE
 	for(auto& this_particle : particles) {
 		std::vector<LandmarkObs> pred_meas;
 		std::vector<LandmarkObs> TransformedObservations;
-
-//		Particle this_particle = particles[i];
 
 		double p_x = this_particle.x;
 		double p_y = this_particle.y;
@@ -169,9 +164,8 @@ void ParticleFilter::updateWeights(double sensor_range, double std_landmark[],
 			}
 		}
 
-		for (int j=0;j<observations.size();j++){ // for each OBSERVATION
+		for (auto& this_observation : observations) {
 
-			LandmarkObs this_observation = observations[j];
 			LandmarkObs tobs;
 
 			// Transform the observation from VEHICLE to MAP COORDS
@@ -185,7 +179,8 @@ void ParticleFilter::updateWeights(double sensor_range, double std_landmark[],
 		} //for j OBSERVATION
 
 //cout << "Particle: " << i << endl;
-		// Having landmarks in range and observation coords in the same reference frame, make the nearest neighbor association
+		// Having landmarks in range, pred_meas, and observation coords in the same reference 
+		// frame, make the nearest neighbor association
 		dataAssociation(pred_meas, TransformedObservations);
 
 		// **
@@ -195,9 +190,7 @@ void ParticleFilter::updateWeights(double sensor_range, double std_landmark[],
 		std::vector<double> sense_x;
 		std::vector<double> sense_y;
 
-		for (int j=0;j<TransformedObservations.size();j++){ // for each TRANSFORMED OBSERVATION
-
-			LandmarkObs NearestNeighbor_Obs = TransformedObservations[j];
+		for (auto& NearestNeighbor_Obs : TransformedObservations) {
 
 			double mu_x=map_landmarks.landmark_list[NearestNeighbor_Obs.id-1].x_f;
 			double mu_y=map_landmarks.landmark_list[NearestNeighbor_Obs.id-1].y_f;
